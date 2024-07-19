@@ -7,7 +7,7 @@ import os
 from shutil import copyfile
 
 # You only need to change this line to your dataset download path
-download_path = 'data/regdb'
+download_path = 'data/RegDB'
 
 if not os.path.isdir(download_path):
     print('please change the download_path')

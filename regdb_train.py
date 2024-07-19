@@ -488,10 +488,8 @@ class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler):
             for base_lr in self.base_lrs
         ]
 
-
-
-
 def process_test_regdb(img_dir, trial = 1, modal = 'visible'):
+    
     if modal=='visible':
         input_data_path = img_dir + 'idx/test_visible_{}'.format(trial) + '.txt'
     elif modal=='thermal':
@@ -1026,7 +1024,7 @@ def main_worker(args):
                 normalize,
             ])
             mode='all'
-            data_path='/dat01/chenjun3/data/RegDB/'
+            data_path='/home/fang/4t/lhp/GUR/data/RegDB/'
             query_img, query_label = process_test_regdb(data_path, trial=trial, modal='visible')
             gall_img, gall_label = process_test_regdb(data_path, trial=trial, modal='thermal')
 

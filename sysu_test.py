@@ -574,7 +574,7 @@ def main_worker(args):
     _,mAP_homo = evaluator.evaluate(test_loader_rgb, dataset_rgb.query, dataset_rgb.gallery, cmc_flag=True,modal=1)
     mode='all'
     print(mode)
-    data_path='/dat01/chenjun3/data/sysu'
+    data_path='/home/fang/4t/lhp/GUR/data/SYSU-MM01'
     query_img, query_label, query_cam = process_query_sysu(data_path, mode=mode)
     nquery = len(query_label)
     queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
@@ -616,7 +616,7 @@ def main_worker(args):
 ###########
     mode='indoor'
     print(mode)
-    data_path='/dat01/chenjun3/data/sysu'
+    data_path='/home/fang/4t/lhp/GUR/data/SYSU-MM01'
     query_img, query_label, query_cam = process_query_sysu(data_path, mode=mode)
     nquery = len(query_label)
     queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))

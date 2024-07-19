@@ -42,15 +42,8 @@ def get_data(name, data_dir):
     dataset = datasets.create(name, root)
     return dataset
 
-
-
-
-
-
 def get_train_loader_ir(args, dataset, height, width, batch_size, workers,
                      num_instances, iters, trainset=None, no_cam=False,train_transformer=None):
-
-
 
 
     # train_transformer = T.Compose([
@@ -82,8 +75,6 @@ def get_train_loader_ir(args, dataset, height, width, batch_size, workers,
 
 def get_train_loader_color(args, dataset, height, width, batch_size, workers,
                      num_instances, iters, trainset=None, no_cam=False,train_transformer=None,train_transformer1=None):
-
-
 
 
     # train_transformer = T.Compose([
@@ -135,8 +126,8 @@ def get_test_loader(dataset, height, width, batch_size, workers, testset=None,te
 
     test_loader = DataLoader(
         Preprocessor(testset, root=dataset.images_dir, transform=test_transformer),
-        batch_size=batch_size, num_workers=2,
-        shuffle=False, pin_memory=False)
+        batch_size=batch_size, num_workers=2, # num_workers=workers,
+        shuffle=False, pin_memory=False)    # pin_morey=True
 
     return test_loader
 
@@ -245,12 +236,12 @@ def process_gallery_sysu(data_path, mode = 'all', trial = 0, relabel=False):
         gall_cam.append(camid)
     return gall_img, np.array(gall_id), np.array(gall_cam)
     
-
 def fliplr(img):
     '''flip horizontal'''
     inv_idx = torch.arange(img.size(3)-1,-1,-1).long()  # N x C x H x W
     img_flip = img.index_select(3,inv_idx)
     return img_flip
+
 def extract_gall_feat(model,gall_loader,ngall):
     pool_dim=2048
     net = model
@@ -415,7 +406,7 @@ def select_merge_data(u_feas, label, label_to_images,  ratio_n,  dists,rgb_num,i
     dists = dists.numpy()
 
     # dists=dists[:rgb_num,rgb_num:]
-    ind = np.unravel_index(np.argsort(dists, axis=None)[::-1], dists.shape) #np.argsort(dists, axis=1)#
+    ind = np.unravel_index(np.argsort(dists, axis=None)[::-1], dists.shape) #从大到小
     idx1 = ind[0]
     idx2 = ind[1]
     dist_list = dists[idx1,idx2] #[dists[i,j] for i,j in zip(idx1,idx2)]
@@ -431,14 +422,14 @@ def select_merge_data_jacard(u_feas, label, label_to_images,  ratio_n,  dists,rg
 
     dists = dists.numpy()
 
-    ind = np.unravel_index(np.argsort(dists, axis=None), dists.shape)
+    ind = np.unravel_index(np.argsort(dists, axis=None), dists.shape)# 从小到大
     idx1 = ind[0]
     idx2 = ind[1]
     dist_list = dists[idx1,idx2] 
     return idx1, idx2, dist_list
 
 
-class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler):
+class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler): # 学习率调度器，用于在训练神经网络时调整学习率
     def __init__(
         self,
         optimizer,
@@ -468,6 +459,11 @@ class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler):
         super(WarmupMultiStepLR, self).__init__(optimizer, last_epoch)
 
     def get_lr(self):
+        '''
+        计算当前的学习率。如果当前轮数小于 warmup_iters，则根据 warmup_method 调整学习率。
+        如果使用 "constant" 预热方法，学习率将直接设置为 warmup_factor。
+        如果使用 "linear" 预热方法，学习率将从 warmup_factor 线性增加到 1。
+        '''
         warmup_factor = 1
         if self.last_epoch < self.warmup_iters:
             if self.warmup_method == "constant":
@@ -516,7 +512,7 @@ def main_worker(args):
     # Create datasets
     iters = args.iters if (args.iters > 0) else None
     print("==> Load unlabeled dataset")
-    dataset_ir = get_data('sysu_ir', args.data_dir)
+    dataset_ir = get_data('sysu_ir', args.data_dir) 
     dataset_rgb = get_data('sysu_rgb', args.data_dir)
 
     test_loader_ir = get_test_loader(dataset_ir, args.height, args.width, args.batch_size, args.workers)
@@ -539,6 +535,7 @@ def main_worker(args):
                          std=[0.229, 0.224, 0.225])
     height=args.height
     width=args.width
+
     train_transformer_rgb = T.Compose([
     T.Resize((height, width), interpolation=3),
     T.Pad(10),
@@ -548,7 +545,6 @@ def main_worker(args):
     normalizer,
     ChannelRandomErasing(probability = 0.5)
     ])
-    
     train_transformer_rgb1 = T.Compose([
     T.Resize((height, width), interpolation=3),
     T.Pad(10),
@@ -581,35 +577,38 @@ def main_worker(args):
         ChannelRandomErasing(probability = 0.5),
         ChannelAdapGray(probability =0.5)])
 
+    # 定义了三个训练器：相机内、相机间、模态间
     trainer_intrac = ClusterContrastTrainer_pretrain_joint(model)
     trainer_interc = ClusterContrastTrainer_pretrain_camera_interC(model) 
     trainer_interm = ClusterContrastTrainer_pretrain_camera_interM(model)
-    stage_cmass = 30
+    
     for epoch in range(start_epoch,args.epochs):
         print('lr:',optimizer.state_dict()['param_groups'][0]['lr'])
 
-        rgb_cams = np.unique([x[2] for x in dataset_rgb.train])
+        rgb_cams = np.unique([x[2] for x in dataset_rgb.train]) # 在数据集中找到所有唯一的RGB相机标识符
         # if epoch < 1:
         #     loop_iter = 5
         # else:
         loop_iter = 1
         for rgb_cam_id in sorted(rgb_cams):
-            ir_cams = np.unique([x[2] for x in dataset_ir.train])
+            ir_cams = np.unique([x[2] for x in dataset_ir.train]) # 在数据集中找到所有唯一的红外相机标识符
             for ir_cam_id in sorted(ir_cams):
                 print('==> Create pseudo labels for camera unlabeled RGB data')
                 # print('rgb, camera ',rgb_cam_id)
-                cam_data_rgb = [x for x in dataset_rgb.train if x[2] == rgb_cam_id]
+                cam_data_rgb = [x for x in dataset_rgb.train if x[2] == rgb_cam_id] # 存放了相机ID
                 cluster_loader_rgb = get_test_loader(dataset_rgb, args.height, args.width,
                                                  64, args.workers, 
                                                  testset=sorted(cam_data_rgb))
-                features_rgb_dict, _ = extract_features(model, cluster_loader_rgb, print_freq=50,mode=1)
+                features_rgb_dict, _ = extract_features(model, cluster_loader_rgb, print_freq=50,mode=1) # _ 用于存放标签：因为是无标签的学习，因此使用占位符表示不使用
                 features_rgb = torch.cat([features_rgb_dict[f].unsqueeze(0) for f, _, _ in sorted(cam_data_rgb)], 0)
-                rerank_dist_rgb = compute_jaccard_distance(features_rgb, k1=args.k1, k2=args.k2,search_option=3)
+                rerank_dist_rgb = compute_jaccard_distance(features_rgb, k1=args.k1, k2=args.k2,search_option=3) # 计算Jaccard距离：用于衡量两个集合相似性的指标，其值越小表示两个集合越相似
                 rgb_eps= 0.55#0.55
+
                 print('RGB Clustering criterion: eps: {:.3f}'.format(rgb_eps))
-                cluster_rgb = DBSCAN(eps=rgb_eps, min_samples=4, metric='precomputed', n_jobs=-1)
-                pseudo_labels_rgb = cluster_rgb.fit_predict(rerank_dist_rgb)
+                cluster_rgb = DBSCAN(eps=rgb_eps, min_samples=4, metric='precomputed', n_jobs=-1) # CPU计算？
+                pseudo_labels_rgb = cluster_rgb.fit_predict(rerank_dist_rgb) # 根据数据或距离矩阵计算集群并预测标签
                 cluster_features_rgb = generate_cluster_features(pseudo_labels_rgb, features_rgb)
+
                 pseudo_labeled_dataset_rgb = []
                 modality_rgb = []
                 cams_rgb=[]
@@ -619,9 +618,9 @@ def main_worker(args):
                     if label != -1:
                         pseudo_labeled_dataset_rgb.append((fname, label.item(), cid))
 
-                num_cluster_rgb = len(set(pseudo_labels_rgb)) - (1 if -1 in pseudo_labels_rgb else 0)
+                num_cluster_rgb = len(set(pseudo_labels_rgb)) - (1 if -1 in pseudo_labels_rgb else 0) # 计算集群数量
                 memory_rgb = ClusterMemory(model.module.num_features, num_cluster_rgb, temp=args.temp,
-                                   momentum=args.momentum, use_hard=args.use_hard).cuda()
+                                   momentum=args.momentum, use_hard=args.use_hard).cuda() # ClusterMemory是一个用于存储和更新聚类特征的类，通常用于深度学习中的特征聚类和检索
                 memory_rgb.features = F.normalize(cluster_features_rgb, dim=1).cuda()
                 print('==> Statistics for RGB  epoch {}: camera {} {} clusters,cluster data {} '.format(epoch,rgb_cam_id, num_cluster_rgb,len(pseudo_labeled_dataset_rgb)))
 
@@ -634,11 +633,13 @@ def main_worker(args):
                 features_ir_dict, _ = extract_features(model, cluster_loader_ir, print_freq=50,mode=2)
                 features_ir = torch.cat([features_ir_dict[f].unsqueeze(0) for f, _, _ in sorted(cam_data_ir)], 0)
                 rerank_dist_ir = compute_jaccard_distance(features_ir, k1=args.k1, k2=args.k2,search_option=3)
+
                 ir_eps = 0.55 #0.55
                 print('ir Clustering criterion: eps: {:.3f}'.format(ir_eps))
                 cluster_ir = DBSCAN(eps=ir_eps, min_samples=4, metric='precomputed', n_jobs=-1)
                 pseudo_labels_ir = cluster_ir.fit_predict(rerank_dist_ir)
-                cluster_features_ir = generate_cluster_features(pseudo_labels_ir, features_ir)
+                cluster_features_ir = generate_cluster_features(pseudo_labels_ir, features_ir) # 通过聚类算法得到的聚类中心特征
+
                 pseudo_labeled_dataset_ir = []
                 modality_ir = []
                 cams_ir=[]
@@ -650,46 +651,46 @@ def main_worker(args):
 
                 num_cluster_ir = len(set(pseudo_labels_ir)) - (1 if -1 in pseudo_labels_ir else 0)
                 memory_ir = ClusterMemory(model.module.num_features, num_cluster_ir, temp=args.temp,
-                                   momentum=args.momentum, use_hard=args.use_hard).cuda()
+                                   momentum=args.momentum, use_hard=args.use_hard).cuda() # 初始化CM对象：用于在训练过程中对图像特征进行聚类
                 memory_ir.features = F.normalize(cluster_features_ir, dim=1).cuda()
-                print('==> Statistics for RGB  epoch {}: camera {} {} clusters,cluster data {} '.format(epoch,rgb_cam_id, num_cluster_rgb,len(pseudo_labeled_dataset_rgb)))
                 print('==> Statistics for ir  epoch {}: camera {} {} clusters,cluster data {} '.format(epoch,ir_cam_id, num_cluster_ir,len(pseudo_labeled_dataset_ir)))
+
                 train_loader_ir = get_train_loader_ir(args, dataset_ir, args.height, args.width,
                                             256, args.workers, args.num_instances, 50,
-                                            trainset=pseudo_labeled_dataset_ir, no_cam=args.no_cam,train_transformer=transform_thermal)
+                                            trainset=pseudo_labeled_dataset_ir, no_cam=args.no_cam,train_transformer=transform_thermal) # get_train_loader_ir是一个用于获取训练数据的函数，它返回一个训练数据加载器
                 train_loader_rgb = get_train_loader_color(args, dataset_rgb, args.height, args.width,
                                         128, args.workers, args.num_instances, 50,
                                         trainset=pseudo_labeled_dataset_rgb, no_cam=args.no_cam,train_transformer=train_transformer_rgb,train_transformer1=train_transformer_rgb1)
 
-                trainer_intrac.memory_ir = memory_ir
+                trainer_intrac.memory_ir = memory_ir # memory_ir可能包含训练数据，例如图像和相应的标签
                 trainer_intrac.memory_rgb = memory_rgb
-                train_loader_ir.new_epoch()
+                train_loader_ir.new_epoch() # new_epoch()函数用于在训练过程中开始一个新的epoch
                 time.sleep(1)
                 train_loader_rgb.new_epoch()
                 time.sleep(1)
-                trainer_intrac.train(epoch, train_loader_ir,train_loader_rgb, optimizer, print_freq=10, train_iters=len(train_loader_rgb))
+                trainer_intrac.train(epoch, train_loader_ir,train_loader_rgb, optimizer, print_freq=10, train_iters=len(train_loader_rgb)) # CAE
 
                 if ir_cam_id == 0:
                     ir_softmax_dim=[]
-                    distribute_map_ir = F.normalize(memory_ir.features.data)
-                    ir_softmax_dim.append(distribute_map_ir.size(0))
+                    distribute_map_ir = F.normalize(memory_ir.features.data) 
+                    ir_softmax_dim.append(distribute_map_ir.size(0)) # 记录当前相机下的聚类数量
                 else:
                     distribute_tmp = F.normalize(memory_ir.features.data)
                     distribute_map_ir = torch.cat((distribute_map_ir, distribute_tmp), dim=0)
-                    ir_softmax_dim.append(distribute_map_ir.size(0))
+                    ir_softmax_dim.append(distribute_map_ir.size(0)) 
                 del train_loader_ir, train_loader_rgb
             if rgb_cam_id == 0:
                 rgb_softmax_dim=[]
                 distribute_map_rgb = F.normalize(memory_rgb.features.data)
-                rgb_softmax_dim.append(distribute_map_rgb.size(0))
+                rgb_softmax_dim.append(distribute_map_rgb.size(0)) # 为什么分成了四类
             else:
                 distribute_tmp = F.normalize(memory_rgb.features.data)
                 distribute_map_rgb = torch.cat((distribute_map_rgb, distribute_tmp), dim=0)
                 rgb_softmax_dim.append( distribute_map_rgb.size(0))
-        print('distribute_map_rgb',distribute_map_rgb.size(0))
+        print('distribute_map_rgb',distribute_map_rgb.size(0)) # 聚类中心或类别的数量
         print('distribute_map_ir',distribute_map_ir.size(0))
-        model.module.classifier_rgb = nn.Linear(2048, distribute_map_rgb.size(0), bias=False).cuda()
-        model.module.classifier_rgb.weight.data.copy_(distribute_map_rgb.cuda())
+        model.module.classifier_rgb = nn.Linear(2048, distribute_map_rgb.size(0), bias=False).cuda() # 创建两个全连接层
+        model.module.classifier_rgb.weight.data.copy_(distribute_map_rgb.cuda()) # 将聚类中心或类别赋值给全连接层的权重 （6）？
 
         model.module.classifier_ir = nn.Linear(2048, distribute_map_ir.size(0), bias=False).cuda()
         model.module.classifier_ir.weight.data.copy_(distribute_map_ir.cuda())
@@ -702,28 +703,27 @@ def main_worker(args):
         features_rgb_ = torch.cat([features_rgb_dict[f].unsqueeze(0) for f, _, _ in sorted(dataset_rgb.train)], 0)
         print(features_rgb_.size())
         print(distribute_map_rgb.size())
-        features_rgb = F.normalize(features_rgb_).cuda()#features_rgb_.cuda()#
-        features_rgb = model.module.classifier_rgb(features_rgb)*20
+        features_rgb = F.normalize(features_rgb_).cuda()
+        features_rgb = model.module.classifier_rgb(features_rgb)*20 # 将 RGB 特征归一化，并将其通过分类器层，然后乘以一个缩放因子：为了放大特征的差异？
+
         print('rgb_softmax_dim',rgb_softmax_dim)
-        features_rgb_1 = F.softmax(features_rgb[:,:rgb_softmax_dim[0]], dim=1)
-        features_rgb_2 = F.softmax(features_rgb[:,rgb_softmax_dim[0]:rgb_softmax_dim[1]+rgb_softmax_dim[0]], dim=1)
-        features_rgb_3 = F.softmax(features_rgb[:,rgb_softmax_dim[1]+rgb_softmax_dim[0]:rgb_softmax_dim[1]+rgb_softmax_dim[0]+rgb_softmax_dim[2]], dim=1)
-        features_rgb_4 = F.softmax(features_rgb[:,rgb_softmax_dim[1]+rgb_softmax_dim[0]+rgb_softmax_dim[2]:], dim=1)
+        features_rgb_1 = F.softmax(features_rgb[:,:rgb_softmax_dim[0]], dim=1) # 将特征通过 softmax 函数，得到每个类别的概率分布  （6）？
+        features_rgb_2 = F.softmax(features_rgb[:,rgb_softmax_dim[0]:rgb_softmax_dim[1]+rgb_softmax_dim[0]], dim=1) 
+        features_rgb_3 = F.softmax(features_rgb[:,rgb_softmax_dim[1]+rgb_softmax_dim[0]:rgb_softmax_dim[1]+rgb_softmax_dim[0]+rgb_softmax_dim[2]], dim=1) # 
+        features_rgb_4 = F.softmax(features_rgb[:,rgb_softmax_dim[1]+rgb_softmax_dim[0]+rgb_softmax_dim[2]:], dim=1) 
         features_rgb = torch.cat((features_rgb_1,features_rgb_2,features_rgb_3,features_rgb_4), dim=1)
 
 
 
-        features_rgb = features_rgb.cpu().detach().data#
+        features_rgb = features_rgb.cpu().detach().data # 将特征从 GPU 转移到 CPU，并从计算图中分离出来，这样子他们们就不会被反向传播更新了，作为静态数据
         rerank_dist_rgb = compute_jaccard_distance(features_rgb, k1=args.k1, k2=args.k2,search_option=3)
-        rgb_eps=0.6
+        rgb_eps=0.6 # 为什么一二阶段的聚类eps不一样
         print('RGB Clustering criterion: eps: {:.3f}'.format(rgb_eps))
-        cluster_rgb = DBSCAN(eps=rgb_eps, min_samples=4, metric='precomputed', n_jobs=-1)
-        pseudo_labels_rgb = cluster_rgb.fit_predict(rerank_dist_rgb)
-        cluster_features_rgb = generate_cluster_features(pseudo_labels_rgb, features_rgb_)
+        cluster_rgb = DBSCAN(eps=rgb_eps, min_samples=4, metric='precomputed', n_jobs=-1) # 
+        pseudo_labels_rgb = cluster_rgb.fit_predict(rerank_dist_rgb) 
+        cluster_features_rgb = generate_cluster_features(pseudo_labels_rgb, features_rgb_) # 生成聚类中心特征
 
-        num_cluster_rgb_ori = len(set(pseudo_labels_rgb)) - (1 if -1 in pseudo_labels_rgb else 0)
-
-
+        num_cluster_rgb_ori = len(set(pseudo_labels_rgb)) - (1 if -1 in pseudo_labels_rgb else 0) # 计算聚类的数量
 
         print('==> Create pseudo labels stage2 for all unlabeled ir data')
 
@@ -742,7 +742,7 @@ def main_worker(args):
         features_ir = torch.cat((features_ir_1,features_ir_2), dim=1)
 
 
-        features_ir = features_ir.cpu().detach().data#
+        features_ir = features_ir.cpu().detach().data # 将特征从 GPU 转移到 CPU，并从计算图中分离出来，这样子他们们就不会被反向传播更新了，作为静态数据
         # features_ir = F.softmax(features_ir, dim=1)
 
         # features_ir = F.normalize(features_ir) 
@@ -755,21 +755,21 @@ def main_worker(args):
 #################
 
 ################################ IR2RGB
-        
+        stage_cmass = 30 # WarmupMultiStepLR？  Heterogeneous Transfer
         if epoch >= stage_cmass:
             lp_feat_rgb = features_rgb_.cpu().data#generate_cluster_features(pseudo_labels_rgb, features_rgb)
-            lp_feat_ir =  features_ir_.cpu().data#generate_cluster_features(pseudo_labels_ir, features_ir)
+            lp_feat_ir =  features_ir_.cpu().data #  RGB 和 IR 特征从 GPU 移动到 CPU 并获取数据
 
-            if epoch  < 100:
-                W       = torch.mm(F.normalize(lp_feat_rgb),F.normalize(lp_feat_ir).t())
+            if epoch  < 100: # 使用余弦相似度归一化后的矩阵乘法来计算关联权重矩阵 W，然后应用 softmax
+                W       = torch.mm(F.normalize(lp_feat_rgb),F.normalize(lp_feat_ir).t())# w表示两种模态图像的相似度
                 W       = F.softmax(W, dim=1)
-                N = W.size(0)
-                topk, indices = torch.topk(W, 20)#20
-                mask = torch.zeros_like(W)
-                mask = mask.scatter(1, indices, 1)
+                N = W.size(0) # N 表示W的行数
+                topk, indices = torch.topk(W, 20)# topk表示W中最大的20个值，indices表示对应的下标
+                mask = torch.zeros_like(W) # mask是一个与W形状相同的零矩阵
+                mask = mask.scatter(1, indices, 1) # 将mask中对应indices的值设为1
                 W    = W*mask
                 S    = W#D1*W*D2
-            else:
+            else: # 使用 compute_jaccard_distance_cm 函数来计算 Jaccard 距离，然后直接使用这个距离作为权重矩阵 W
                 rerank_dist_lp = compute_jaccard_distance_cm(lp_feat_rgb,lp_feat_ir, k1=20, k2=args.k2,search_option=3)
 
                 rerank_dist_lp = torch.from_numpy(rerank_dist_lp)
@@ -779,22 +779,27 @@ def main_worker(args):
                 mask = torch.zeros_like(W)
                 mask = mask.scatter(1, indices, 1)
                 W    = W*mask
-                S    = W#D1*W*D2
+                S    = W # D1*W*D2
+
+            ########根据 IR 模态的伪标签创建 one-hot 编码
             labels = torch.from_numpy(pseudo_labels_ir+1).view(-1)
             # print(labels.max())
             # print(c)
             c = int(num_cluster_ir)+1
             n = labels.size(0)
             # print('labels.size()',labels.size())
-            y = F.one_hot(labels.view(n,1).long(),c).float().squeeze(1) 
-            
-            adj = S
+            y = F.one_hot(labels.view(n,1).long(),c).float().squeeze(1) # 二维张量，表示RGB图像和红外图像的标签之间的相似度
+            ########
+            # 使用关联矩阵 S 和 one-hot 编码 y 来生成软伪标签
+            adj = S #矩阵，表示RGB图像和红外图像之间的相似度
             # print(adj)
-            post_step=lambda x:torch.clamp(x,0,1)
+            post_step=lambda x:torch.clamp(x,0,1) # 将x的值限制在[0, 1]之间
             result = y.clone()
+
             alpha = 1
             result_soft = alpha * (adj @ result)
             # print(result_soft.size())
+            # 将软伪标签转换为硬伪标签（最大概率的类别索引）
             result = torch.zeros(result_soft.size(0)).view(-1)
             for i in range(result_soft.size(0)):
                 # print(result_soft[i])
@@ -832,11 +837,11 @@ def main_worker(args):
                 pseudo_labels_rgb_cm = np.array(pseudo_labels_rgb_cm)
 
 
-            pseudo_labels_ir2rgb = np.hstack((pseudo_labels_rgb_cm, pseudo_labels_ir))
+            pseudo_labels_ir2rgb = np.hstack((pseudo_labels_rgb_cm, pseudo_labels_ir)) # 将 RGB 到 IR 的伪标签和原始 IR 伪标签水平堆叠起来
 
             pseudo_labels_all=pseudo_labels_ir2rgb
 
-            
+            # 切割回去
             pseudo_labels_all = np.array(pseudo_labels_all)
             pseudo_labels_rgb=pseudo_labels_all[:features_rgb_.size(0)]
             pseudo_labels_ir=pseudo_labels_all[features_rgb_.size(0):]
@@ -845,9 +850,9 @@ def main_worker(args):
 
 
 
-        
+        # 生成伪标签，用来更新model memory
         pseudo_labeled_dataset_rgb = []
-        modality_rgb = []
+        modality_rgb = [] # 存储RGB图像的模态信息
         cams_rgb=[]
         print('LP rgb label')
         for i, ((fname, _, cid), label) in enumerate(zip(sorted(dataset_rgb.train), pseudo_labels_rgb)):
@@ -890,10 +895,12 @@ def main_worker(args):
         distribute_cm_map_ir = memory_ir.features.data#cluster_features_ir#
 
         print('==> Statistics for ir  epoch {}: {} clusters,cluster data {}'.format(epoch, num_cluster_ir,len(pseudo_labeled_dataset_ir)))
+
+        # 准备跨模态训练所需的数据和参数，然后调用训练器的 train 方法来执行实际的训练过程。通过这种方式，模型可以学习将 IR 图像的特征与 RGB 图像的特征相关联，从而提高跨模态的识别性能
         train_loader_ir = get_train_loader_ir(args, dataset_ir, args.height, args.width,
                                     256, args.workers, args.num_instances, 200,
-                                    trainset=pseudo_labeled_dataset_ir, no_cam=args.no_cam,train_transformer=transform_thermal)
-        if epoch >= stage_cmass:
+                                    trainset=pseudo_labeled_dataset_ir, no_cam=args.no_cam,train_transformer=transform_thermal) # 创建 IR 训练加载器
+        if epoch >= stage_cmass: # 设置记忆模块
             trainer_interc.memory_ir = memory_ir
             trainer_interc.memory_rgb = memory_ir
         else:
@@ -909,40 +916,40 @@ def main_worker(args):
 
 
         del features_ir,features_rgb,features_ir_,features_rgb_
-        train_loader_ir.new_epoch()
+        train_loader_ir.new_epoch() # 重置数据加载器
         time.sleep(1)
         train_loader_rgb.new_epoch()
         time.sleep(1)
         trainer_interc.train(epoch, train_loader_ir,train_loader_rgb, optimizer,
             intra_id_labels_rgb=intra_id_labels_rgb, intra_id_features_rgb=intra_id_features_rgb,intra_id_labels_ir=intra_id_labels_ir, intra_id_features_ir=intra_id_features_ir,
             all_label_rgb=pseudo_labels_rgb,all_label_ir=pseudo_labels_ir,cams_ir=cams_ir,cams_rgb=cams_rgb,
-                      print_freq=args.print_freq, train_iters=len(train_loader_ir))
+                      print_freq=args.print_freq, train_iters=len(train_loader_ir)) # 执行相机键训练
 
         ############stage3
         if epoch < (stage_cmass+10):
-            distribute_cm_map = torch.cat((distribute_cm_map_rgb, distribute_cm_map_ir), dim=0)
-            distribute_cm_map = F.normalize(distribute_cm_map) 
-            model.module.classifier_rgb = nn.Linear(2048, distribute_cm_map.size(0), bias=False).cuda()
+            distribute_cm_map = torch.cat((distribute_cm_map_rgb, distribute_cm_map_ir), dim=0) # 将 RGB 和 IR 的分布图横向合并
+            distribute_cm_map = F.normalize(distribute_cm_map) # 归一化处理
+            model.module.classifier_rgb = nn.Linear(2048, distribute_cm_map.size(0), bias=False).cuda() # 为RGB和IR数据分别初始化线性分类器，并将归一化的特征图作为分类器的权重：输入特征维度为2048，输出特征维度为分布图的维度
             model.module.classifier_rgb.weight.data.copy_(distribute_cm_map.cuda())
 
             model.module.classifier_ir = nn.Linear(2048, distribute_cm_map.size(0), bias=False).cuda()
             model.module.classifier_ir.weight.data.copy_(distribute_cm_map.cuda())
 
-            print('==> Create pseudo labels for stage3 all unlabeled RGB data')
+            print('==> Create pseudo labels for stage3 all unlabeled RGB data')# 为第三阶段的所有未标记RGB数据创建伪标签
             cluster_loader_rgb = get_test_loader(dataset_rgb, args.height, args.width,
                                              256, args.workers, 
-                                             testset=sorted(dataset_rgb.train))
-            features_rgb_dict, _ = extract_features(model, cluster_loader_rgb, print_freq=50,mode=1)
-            features_rgb_ = torch.cat([features_rgb_dict[f].unsqueeze(0) for f, _, _ in sorted(dataset_rgb.train)], 0)
+                                             testset=sorted(dataset_rgb.train)) # 获取 RGB 数据集的测试加载器
+            features_rgb_dict, _ = extract_features(model, cluster_loader_rgb, print_freq=50,mode=1) # 提取 RGB 数据的特征
+            features_rgb_ = torch.cat([features_rgb_dict[f].unsqueeze(0) for f, _, _ in sorted(dataset_rgb.train)], 0) # 将提取的特征拼接在一起
             print(features_rgb_.size())
             print(distribute_cm_map.size())
-            features_rgb = F.normalize(features_rgb_).cuda()#features_rgb_.cuda()#
-            features_rgb = model.module.classifier_rgb(features_rgb)*20
-            features_rgb_1 = F.softmax(features_rgb[:,:distribute_cm_map_rgb.size(0)].data, dim=1)
+            features_rgb = F.normalize(features_rgb_).cuda() # 对RGB特征进行归一化并移动到GPU
+            features_rgb = model.module.classifier_rgb(features_rgb)*20 # 使用RGB分类器处理特征，并乘以20
+            features_rgb_1 = F.softmax(features_rgb[:,:distribute_cm_map_rgb.size(0)].data, dim=1) # 对RGB特征进行softmax归一化, 对列
             features_rgb_2 = F.softmax(features_rgb[:,distribute_cm_map_rgb.size(0):].data, dim=1)
             features_rgb = torch.cat((features_rgb_1,features_rgb_2), 1)
 
-            features_rgb = features_rgb.cpu().detach().data#
+            features_rgb = features_rgb.cpu().detach().data # 将RGB特征移动到CPU并释放GPU内存
             # features_rgb = F.softmax(features_rgb.data, dim=1)
 
             print('==> Create pseudo labels for all unlabeled ir data')
@@ -959,25 +966,30 @@ def main_worker(args):
             features_ir_2 = F.softmax(features_ir[:,distribute_cm_map_rgb.size(0):].data, dim=1)
             features_ir = torch.cat((features_ir_1,features_ir_2), 1)
 
-            features_ir = features_ir.cpu().detach().data#
+            features_ir = features_ir.cpu().detach().data# 
 
 
 
-            features_all = torch.cat((features_rgb,features_ir),dim=0)
+            features_all = torch.cat((features_rgb,features_ir),dim=0) # 将RGB和IR的特征拼接在一起
 
-            features_all_ = torch.cat((features_rgb_,features_ir_),dim=0)
+            features_all_ = torch.cat((features_rgb_,features_ir_),dim=0) # 将未经分类器处理的RGB和IR特征拼接成一个大的特征张量
 
-            rerank_dist_all = compute_jaccard_distance(features_all, k1=args.k1, k2=args.k2,search_option=3)
+            rerank_dist_all = compute_jaccard_distance(features_all, k1=args.k1, k2=args.k2,search_option=3) # 计算所有特征之间的Jaccard距离
+
             all_eps=0.6
             print('all Clustering criterion: eps: {:.3f}'.format(all_eps))
+            # 使用DBSCAN算法对特征进行聚类，并生成伪标签
             cluster_all = DBSCAN(eps=all_eps, min_samples=4, metric='precomputed', n_jobs=-1)
-            pseudo_labels_all = cluster_all.fit_predict(rerank_dist_all)
+            pseudo_labels_all = cluster_all.fit_predict(rerank_dist_all) 
 
-
+            # 将RGB和IR的伪标签分开
             pseudo_labels_rgb=pseudo_labels_all[:features_rgb_.size(0)]
             pseudo_labels_ir=pseudo_labels_all[features_rgb_.size(0):]
 
+            # 生成RGB和IR的聚类特征
             cluster_features_all = generate_cluster_features(pseudo_labels_all, features_all_)
+
+            # 生成RGB和IR的伪标签数据集
             pseudo_labeled_dataset_rgb = []
             modality_rgb = []
             cams_rgb=[]
@@ -989,15 +1001,14 @@ def main_worker(args):
 
 
             num_cluster_rgb = len(set(pseudo_labels_rgb)) - (1 if -1 in pseudo_labels_rgb else 0)
-
-
-            print('==> Statistics for RGB  epoch {}:  {} clusters,cluster data {}'.format(epoch, num_cluster_rgb,len(pseudo_labeled_dataset_rgb)))
+            
+            # 生成RGB的训练数据加载器
             train_loader_rgb = get_train_loader_color(args, dataset_rgb, args.height, args.width,
-                                            128, args.workers, args.num_instances, 200,
-                                            trainset=pseudo_labeled_dataset_rgb, no_cam=args.no_cam,train_transformer=train_transformer_rgb,train_transformer1=train_transformer_rgb1)
+                                                        128, args.workers, args.num_instances, 200,
+                                                        trainset=pseudo_labeled_dataset_rgb, no_cam=args.no_cam,train_transformer=train_transformer_rgb,train_transformer1=train_transformer_rgb1)
+            
+            print('==> Statistics for RGB  epoch {}:  {} clusters,cluster data {}'.format(epoch, num_cluster_rgb,len(pseudo_labeled_dataset_rgb)))
 
-            # cluster_ir = DBSCAN(eps=ir_eps, min_samples=4, metric='euclidean', n_jobs=-1)
-            # pseudo_labels_ir = cluster_rgb.fit_predict(features_ir.cpu())
 
             pseudo_labeled_dataset_ir = []
             modality_ir = []
@@ -1009,31 +1020,33 @@ def main_worker(args):
                     pseudo_labeled_dataset_ir.append((fname, label.item(), cid))
 
             num_cluster_ir = len(set(pseudo_labels_ir)) - (1 if -1 in pseudo_labels_ir else 0)
-
-
-            print('==> Statistics for ir  epoch {}: {} clusters,cluster data {}'.format(epoch, num_cluster_ir,len(pseudo_labeled_dataset_ir)))
+        
+            # 生成IR的训练数据加载器
             train_loader_ir = get_train_loader_ir(args, dataset_ir, args.height, args.width,
                                         256, args.workers, args.num_instances, 200,
                                         trainset=pseudo_labeled_dataset_ir, no_cam=args.no_cam,train_transformer=transform_thermal)
+            print('==> Statistics for ir  epoch {}: {} clusters,cluster data {}'.format(epoch, num_cluster_ir,len(pseudo_labeled_dataset_ir)))
 
             num_cluster_all = len(set(pseudo_labels_all)) - (1 if -1 in pseudo_labels_all else 0)
-            
+            print('num_cluster_all {}'.format(num_cluster_all))
+
+            # 初始化一个聚类内存对象 memory_all，并将其特征归一化后移动到GPU
             memory_all = ClusterMemory(model.module.num_features, num_cluster_all, temp=args.temp,
                                momentum=args.momentum, use_hard=args.use_hard).cuda()
             memory_all.features = F.normalize(cluster_features_all, dim=1).cuda()
 
-            trainer_interm.memory_ir = memory_all
+            trainer_interm.memory_ir = memory_all # 将聚类内存分配给训练器的IR和RGB部分
             trainer_interm.memory_rgb = memory_all
 
             cams_rgb = np.asarray(cams_rgb)
             cams_ir = np.asarray(cams_ir)
 
-            intra_id_features_rgb,intra_id_labels_rgb = [],[]
+            intra_id_features_rgb,intra_id_labels_rgb = [],[] # 初始化RGB和IR的ID特征和标签列表
             intra_id_features_ir,intra_id_labels_ir = [],[]
 
 
             del features_ir,features_rgb,features_ir_,features_rgb_
-            train_loader_ir.new_epoch()
+            train_loader_ir.new_epoch() # 重置IR和RGB数据加载器以准备新的训练周期，并暂停1秒
             time.sleep(1)
             train_loader_rgb.new_epoch()
 
@@ -1046,10 +1059,10 @@ def main_worker(args):
 ###################
 
 
-        if epoch>=6 and ( (epoch + 1) % args.eval_step == 0 or (epoch == args.epochs - 1)):
-            _,mAP_homo = evaluator.evaluate(test_loader_ir, dataset_ir.query, dataset_ir.gallery, cmc_flag=True,modal=2)
+        if epoch>=6 and ( (epoch + 1) % args.eval_step == 0 or (epoch == args.epochs - 1)): # 只有在训练周期 epoch 大于或等于6，并且是评估步长 args.eval_step 的倍数或者训练周期是最后一个周期时，才会执行评估
+            _,mAP_homo = evaluator.evaluate(test_loader_ir, dataset_ir.query, dataset_ir.gallery, cmc_flag=True,modal=2) # 对IR模态进行评估，modal表示：
             _,mAP_homo = evaluator.evaluate(test_loader_rgb, dataset_rgb.query, dataset_rgb.gallery, cmc_flag=True,modal=1)
-##############################
+            ##############################
             args.test_batch=64
             args.img_w=args.width
             args.img_h=args.height
@@ -1062,7 +1075,7 @@ def main_worker(args):
                 normalize,
             ])
             mode='all'
-            data_path='/dat01/chenjun3/data/sysu'
+            data_path='/home/fang/4t/lhp/GUR/data/SYSU-MM01'
             query_img, query_label, query_cam = process_query_sysu(data_path, mode=mode)
             nquery = len(query_label)
             queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
@@ -1077,7 +1090,7 @@ def main_worker(args):
                 gall_feat_fc = extract_gall_feat(model,trial_gall_loader,ngall)
 
                 # fc feature
-                distmat = np.matmul(query_feat_fc, np.transpose(gall_feat_fc))
+                distmat = np.matmul(query_feat_fc, np.transpose(gall_feat_fc)) # 计算查询特征和画廊特征之间的余弦相似度
                 cmc, mAP, mINP = eval_sysu(-distmat, query_label, gall_label, query_cam, gall_cam)
 
                 if trial == 0:
@@ -1128,7 +1141,7 @@ def main_worker(args):
     _,mAP_homo = evaluator.evaluate(test_loader_ir, dataset_ir.query, dataset_ir.gallery, cmc_flag=True,modal=2)
     _,mAP_homo = evaluator.evaluate(test_loader_rgb, dataset_rgb.query, dataset_rgb.gallery, cmc_flag=True,modal=1)
     mode='all'
-    data_path='/dat01/chenjun3/data/sysu'
+    data_path='/home/fang/4t/lhp/GUR/data/SYSU-MM01'
     query_img, query_label, query_cam = process_query_sysu(data_path, mode=mode)
     nquery = len(query_label)
     queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))

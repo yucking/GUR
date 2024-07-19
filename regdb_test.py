@@ -613,7 +613,7 @@ def main_worker(args):
         # _,mAP_homo = evaluator.evaluate(test_loader_rgb, dataset_rgb.query, dataset_rgb.gallery, cmc_flag=True,modal=1)
         mode='visible to thermal'
         print(mode)
-        data_path='/dat01/chenjun3/data/RegDB/'
+        data_path='/home/fang/4t/lhp/GUR/data/RegDB/'
         query_img, query_label = process_test_regdb(data_path, trial=trial, modal='visible')
         gall_img, gall_label = process_test_regdb(data_path, trial=trial, modal='thermal')
 
@@ -683,7 +683,7 @@ def main_worker(args):
         # _,mAP_homo = evaluator.evaluate(test_loader_rgb, dataset_rgb.query, dataset_rgb.gallery, cmc_flag=True,modal=1)
         mode='thermal to visible'
         print(mode)
-        data_path='/dat01/chenjun3/data/RegDB/'
+        data_path='/home/fang/4t/lhp/GUR/data/RegDB/'
         query_img, query_label = process_test_regdb(data_path, trial=trial, modal='thermal')
         gall_img, gall_label = process_test_regdb(data_path, trial=trial, modal='visible')
 

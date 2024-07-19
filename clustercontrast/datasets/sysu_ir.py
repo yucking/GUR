@@ -16,11 +16,11 @@ class sysu_ir(BaseImageDataset):
     # identities: 1501 (+1 for background)
     # images: 12936 (train) + 3368 (query) + 15913 (gallery)
     """
-    dataset_dir = 'sysu/ir_modify/'
+    dataset_dir = 'ir_modify/'
 
     def __init__(self, root, verbose=True, **kwargs):
         super(sysu_ir, self).__init__()
-        root='/dat01/chenjun3/data/'
+        root='/home/fang/4t/lhp/GUR/data/SYSU-MM01'
         self.dataset_dir = osp.join(root, self.dataset_dir)
         self.train_dir = osp.join(self.dataset_dir, 'bounding_box_train')
 

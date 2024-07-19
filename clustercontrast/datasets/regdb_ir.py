@@ -21,7 +21,7 @@ class regdb_ir(BaseImageDataset):
     def __init__(self, root, trial= 0,verbose=True, **kwargs):
         super(regdb_ir, self).__init__()
         # print('regdb_ir',trial)
-        root='/dat01/chenjun3/data/'
+        root='/home/fang/4t/lhp/GUR/data/'
         self.dataset_dir = osp.join(root, self.dataset_dir)
         self.train_dir = osp.join(self.dataset_dir, str(trial)+'/'+'bounding_box_train')
 

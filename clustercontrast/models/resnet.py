@@ -31,7 +31,7 @@ class ResNet(nn.Module):
             raise KeyError("Unsupported depth:", depth)
         # resnet = ResNet.__factory[depth](pretrained=pretrained)
         resnet = ResNet.__factory[depth](pretrained=False)
-        resnet.load_state_dict(  torch.load('/dat01/yangbin/cluster-contrast-reid-main/examples/pretrained/resnet50-19c8e357.pth'))
+        resnet.load_state_dict(  torch.load('/home/fang/4t/lhp/GUR/examples/pretrained/resnet50-19c8e357.pth'))
 
         resnet.layer4[0].conv2.stride = (1, 1)
         resnet.layer4[0].downsample[0].stride = (1, 1)
