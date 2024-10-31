@@ -1,4 +1,5 @@
-data/RegDB
-data/SYSU-MM01
+data
 logs/regdb_val
 logs/sysu_val2
+clustercontrast
+__pycache__/

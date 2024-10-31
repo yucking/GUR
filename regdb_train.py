@@ -1024,7 +1024,7 @@ def main_worker(args):
                 normalize,
             ])
             mode='all'
-            data_path='/home/fang/4t/lhp/GUR/data/RegDB/'
+            data_path='/home/fang/4t/lhp/GUR/data/regdb/RegDB/'
             query_img, query_label = process_test_regdb(data_path, trial=trial, modal='visible')
             gall_img, gall_label = process_test_regdb(data_path, trial=trial, modal='thermal')
 

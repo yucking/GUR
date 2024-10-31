@@ -20,7 +20,7 @@ class sysu_rgb(BaseImageDataset):
 
     def __init__(self, root, verbose=True, **kwargs):
         super(sysu_rgb, self).__init__()
-        root='/home/fang/4t/lhp/GUR/data/SYSU-MM01'
+        root='/home/fang/4t/lhp/GUR/data/sysu/SYSU-MM01'
         self.dataset_dir = osp.join(root, self.dataset_dir)
         self.train_dir = osp.join(self.dataset_dir, 'bounding_box_train')
 

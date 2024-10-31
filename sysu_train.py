@@ -1075,7 +1075,7 @@ def main_worker(args):
                 normalize,
             ])
             mode='all'
-            data_path='/home/fang/4t/lhp/GUR/data/SYSU-MM01'
+            data_path='/home/fang/4t/lhp/GUR/data/sysu/SYSU-MM01'
             query_img, query_label, query_cam = process_query_sysu(data_path, mode=mode)
             nquery = len(query_label)
             queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
@@ -1141,7 +1141,7 @@ def main_worker(args):
     _,mAP_homo = evaluator.evaluate(test_loader_ir, dataset_ir.query, dataset_ir.gallery, cmc_flag=True,modal=2)
     _,mAP_homo = evaluator.evaluate(test_loader_rgb, dataset_rgb.query, dataset_rgb.gallery, cmc_flag=True,modal=1)
     mode='all'
-    data_path='/home/fang/4t/lhp/GUR/data/SYSU-MM01'
+    data_path='/home/fang/4t/lhp/GUR/data/sysu/SYSU-MM01'
     query_img, query_label, query_cam = process_query_sysu(data_path, mode=mode)
     nquery = len(query_label)
     queryset = TestData(query_img, query_label, transform=transform_test, img_size=(args.img_w, args.img_h))
